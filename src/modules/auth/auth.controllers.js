@@ -3,7 +3,7 @@ import User from "../../../database/models/user.model.js";
 import {messages} from '../../utils/constant/messages.js';
 import { comparePass, hashPass } from "../../utils/hash-compare.js";
 import { generateOTP } from "../../utils/otp.js";
-import { sendEmail } from "../../utils/emails/email.js";
+import { sendEmail, sendResetPasswordMail } from "../../utils/emails/email.js";
 import Token from "../../../database/models/token.model.js";
 import { generateToken, verifyToken } from "../../utils/token.js";
 import { status } from "../../utils/constant/enums.js";
@@ -148,4 +148,61 @@ export const logIn = catchErrorAsync(async (req, res, next) => {
     success: true,
     accessToken,
   });
+});
+
+
+export const forgetPassword = catchErrorAsync(async(req, res, next) => {
+  const {email} = req.body;
+  const userExist = await User.findOne({email});
+  if (!userExist) return next(new AppError(messages.user.notFound, 404));
+  if (userExist.otpCode && userExist.otpExpire > Date.now()) {
+    return next(new AppError(messages.user.hasOTP, 404));
+  }
+  const {otpCode, otpExpire} = generateOTP();
+  // update user OTP
+  userExist.otpCode = otpCode;
+  userExist.otpExpire = otpExpire;
+  await userExist.save();
+  await sendResetPasswordMail(email, otpCode);
+   // return res
+  return res.json({ message: "check your email", success: true });
+});
+
+export const logout = catchErrorAsync(async (req, res, next) => {
+  const {_id} = req.authUser;
+  const authHeader = req.headers.authentication;
+  if (!authHeader) return next(new AppError("No token provided", 401));
+  const token = authHeader.split(" ")[1];
+  await User.findByIdAndUpdate(_id, {
+    isActive:false
+  });
+  await Token.findByIdAndUpdate(
+    {token},
+    {isValid: false}
+  );
+  res.status(200).json({
+    message: messages.user.loggedOutSuccessfully,
+    success: true,
+  });
+});
+
+export const verifyOtp = catchErrorAsync(async (req, res, next) => {
+  const { email, otpCode } = req.body;
+  const user = await User.findOne({ email });
+  if (!user) return next(new AppError(messages.user.notFound, 404));
+  if (user.otpCode !== otpCode)
+    return next(new AppError(messages.user.invalidOTP, 401));
+  if (user.otpExpire < new Date())
+    return next(new AppError(messages.user.expireOTP, 400));
+  await User.findOneAndUpdate(
+    { email },
+    {
+      isVerified: true,
+      otpCode: null,
+      otpExpire: null,
+      status: status.VERIFIED,
+    },
+    { new: true }
+  );
+  res.json({ message: messages.user.verifiedSuccessfully });
 });

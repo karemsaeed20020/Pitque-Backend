@@ -20,6 +20,6 @@ export const signInVal = joi
     }),
     email: generalFields.email,
     password: generalFields.password.required(),
-    id: generalFields.objectId.required(),
+    // id: generalFields.objectId.required(),
   })
   .required();
