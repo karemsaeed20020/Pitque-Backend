@@ -13,6 +13,7 @@ authRouter.get('/verify/:token', authControllers.verifyAccount);
 authRouter.post('/login', validate(signInVal),authControllers.logIn);
 authRouter.put("/forgetPass", authControllers.forgetPassword);
 authRouter.post("/verifyOtp", authControllers.verifyOtp);
+authRouter.put("/changePass", authControllers.changePassword);
 authRouter.post("/logout", isAuthenticated, authControllers.logout);
 
 

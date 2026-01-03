@@ -206,3 +206,70 @@ export const verifyOtp = catchErrorAsync(async (req, res, next) => {
   );
   res.json({ message: messages.user.verifiedSuccessfully });
 });
+export const changePassword = catchErrorAsync(async(req, res, next) => {
+  const {otp, newPass, email} = req.body;
+  
+  console.log("DEBUG: Received OTP:", otp);
+  console.log("DEBUG: Received email:", email);
+  
+  // Find user by email
+  const user = await User.findOne({email});
+  if (!user) {
+    console.log("DEBUG: User not found for email:", email);
+    return next(new AppError(messages.user.notFound, 404));
+  }
+  
+  // Check if OTP matches
+  if (String(user.otpCode) !== String(otp).trim()) {
+    return next(new AppError(messages.user.invalidOTP, 401));
+  }
+  
+  // Check if OTP is expired
+  if (!user.otpExpire || user.otpExpire < Date.now()) {
+    console.log("DEBUG: OTP expired or invalid expire date");
+    return next(new AppError("OTP has expired. Please request a new one.", 401));
+  }
+  
+  // Hash new password
+  const hashedPassword = hashPass({ 
+    password: newPass,
+    saltRounds: Number(process.env.SALT_ROUNDS)
+  });
+  
+  // Update user password
+  await User.updateOne(
+    { email },
+    {
+      password: hashedPassword,
+      otpCode: null,
+      otpExpire: null,
+      passwordChangedAt: Date.now(),
+    }
+  );
+  
+  // Invalidate old tokens
+  await Token.updateMany({ userId: user._id }, { isValid: false });
+  
+  // Generate new token
+  const accessToken = await generateToken({
+    payload: {
+      _id: user._id,
+      name: user.userName,
+      email: user.email,
+      role: user.role,
+    },
+  });
+  
+  // Create new token
+  await Token.create({
+    token: accessToken,
+    userId: user._id,
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  });
+  
+  return res.status(200).json({
+    message: messages.password.updatedSuccessfully,
+    success: true,
+    accessToken,
+  });
+});
